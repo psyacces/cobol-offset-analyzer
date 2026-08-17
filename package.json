@@ -2,7 +2,7 @@
   "name": "cobol-offset-analyzer",
   "displayName": "COBOL Offset Analyzer",
   "description": "Analyze COBOL data structures and display offset/length information for each variable",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "publisher": "abraham-villeda",
   "repository": {
     "type": "git",
