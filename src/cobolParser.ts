@@ -20,6 +20,7 @@ interface GroupInfo {
     length: number;
     line: number;
     name: string;
+    isRedefines?: boolean;
 }
 
 export class CobolParser {
@@ -182,12 +183,18 @@ export class CobolParser {
 
             results.push(result);
 
-            // Update parent group lengths
-            for (let i = 0; i < this.groupStack.length; i++) {
-                this.groupStack[i].length += len;
+            // Update parent group lengths ONLY if NOT REDEFINES
+            // and if NOT inside a REDEFINES group
+            // REDEFINES occupies same memory space, doesn't add bytes
+            const isInsideRedefinesGroup = this.groupStack.some(g => g.isRedefines);
+
+            if (!data.includes('REDEFINES') && !isInsideRedefinesGroup) {
+                for (let i = 0; i < this.groupStack.length; i++) {
+                    this.groupStack[i].length += len;
+                }
+                this.pos += len;
             }
 
-            this.pos += len;
             this.plv = lev;
 
         } else if (!hasPic) {
@@ -197,7 +204,8 @@ export class CobolParser {
                 position: this.pos,
                 length: 0,
                 line: lineNum,
-                name: this.extractName(data)
+                name: this.extractName(data),
+                isRedefines: data.includes('REDEFINES')
             };
 
             this.groupStack.push(groupInfo);
