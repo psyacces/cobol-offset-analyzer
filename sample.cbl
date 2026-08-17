@@ -12,6 +12,9 @@
                10  EMP-HIRE-YEAR   PIC 9(4).
                10  EMP-HIRE-MONTH  PIC 9(2).
                10  EMP-HIRE-DAY    PIC 9(2).
+           05  FILLER REDEFINES MP-HIRE-DATE.
+               10  FILLER          PIC X(6).
+               10  EMP-CTRL        PIC X(2).
            05  EMP-STATUS          PIC X(1).
                88  ACTIVE          VALUE 'A'.
                88  INACTIVE        VALUE 'I'.

@@ -1,20 +1,22 @@
 # COBOL Offset Analyzer
 
-A VSCode extension that analyzes COBOL data structures and displays the offset (starting position) and length of each variable in bytes.
+A VSCode extension that analyzes COBOL data structures and displays the offset (starting position) and length of each variable in bytes using **hover tooltips**.
 
-## Features
+## ✨ Features
 
-- ✨ Analyzes COBOL data structures (01, 05, 10... levels)
-- 📍 Calculates exact byte positions (offsets) for each variable
-- 📏 Shows length in bytes for each variable
-- 🎯 Displays offset/length in format: `position,length` (e.g., `1,5`)
-- ⌨️ One-click analysis with keyboard shortcut
-- 🔍 Hover information showing variable details
-- ✅ Supports PIC clauses with length calculation
-- 📦 Handles COMP and COMP-3 numeric formats
-- 🔄 Supports OCCURS clause for arrays
-- ↔️ Handles REDEFINES clause
-- 🔐 Supports SYNCHRONIZED fields
+- 🟢 **Auto-Active by Default** - Starts active when installed, no setup needed
+- 📍 **Automatic Offset Calculation** - Hover over any COBOL variable to see position and length
+- 📏 **Shows Length in Bytes** - Display format: Position and Length in `NNNNNN` format
+- 🎯 **Type Detection** - Identifies Numeric, Alphanumeric, COMP, COMP-3, Group/Structure, etc.
+- 💾 **Persistent State** - Remembers if extension is active/inactive between sessions
+- 🔄 **Toggle On/Off** - Easy enable/disable with Ctrl+Shift+O or status bar click
+- ✅ **Supports All COBOL Features:**
+  - PIC clause length calculation
+  - COMP and COMP-3 numeric formats
+  - OCCURS clause for arrays
+  - REDEFINES clause (correctly excludes redefined bytes)
+  - SYNCHRONIZED fields
+  - Nested groups and subgroups
 
 ## Supported File Extensions
 
@@ -26,90 +28,91 @@ A VSCode extension that analyzes COBOL data structures and displays the offset (
 
 ### 1. Open a COBOL File
 
-Open any `.cbl`, `.cob`, or `.cobol` file in VSCode.
+Open any `.cbl`, `.cob`, or `.cobol` file in VSCode. The extension is **ACTIVE by default**.
 
-### 2. Run the Analyzer
+### 2. Hover Over Variables
 
-**Option A: Keyboard Shortcut**
-- Press `Ctrl+Shift+O` (Windows/Linux) or `Cmd+Shift+O` (Mac)
+Simply **hover your mouse** over any variable or group header to see:
 
-**Option B: Command Palette**
-- Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
-- Search for "Analyze COBOL Structure"
-- Press Enter
-
-### 3. View Results
-
-The extension will insert offset/length information at the end of each variable line in the format:
 ```
-                                             position,length
+Position:   000001
+Length:     000005 bytes
+Type:       Numeric
 ```
 
-### 4. Hover Information
+### 3. Status Indicator
 
-Hover your mouse over any variable to see:
-- Starting position (offset)
-- Length in bytes
-- Metadata (OCCURS, REDEFINES, SYNCHRONIZED, etc.)
+Look at the **bottom-right corner** of VSCode (status bar):
+- **✅ COBOL Offset: ON** - Extension is active
+- **❌ COBOL Offset: OFF** - Extension is inactive
+
+Click it to toggle, or press **Ctrl+Shift+O** (Mac: **Cmd+Shift+O**)
+
+### 4. Deactivate/Reactivate
+
+**Press Ctrl+Shift+O** (or Cmd+Shift+O on Mac) to:
+- Disable the extension (status shows RED ❌)
+- Re-enable the extension (status shows GREEN ✅)
+
+The state is saved and persists between sessions.
 
 ## Example
 
-**Input COBOL:**
+**When you hover over a COBOL variable:**
+
 ```cobol
-       01  EMPLOYEE-RECORD.
-           05  EMP-ID              PIC 9(5).
-           05  EMP-NAME            PIC X(30).
-           05  EMP-SALARY          PIC 9(7)V99 COMP-3.
-           05  EMP-HIRE-DATE.
-               10  EMP-HIRE-YEAR   PIC 9(4).
-               10  EMP-HIRE-MONTH  PIC 9(2).
-               10  EMP-HIRE-DAY    PIC 9(2).
+01  EMPLOYEE-RECORD.
+    05  EMP-ID              PIC 9(5).
+    05  EMP-NAME            PIC X(30).
+    05  EMP-SALARY          PIC 9(7)V99 COMP-3.
+    05  EMP-HIRE-DATE.
+        10  EMP-HIRE-YEAR   PIC 9(4).
+        10  EMP-HIRE-MONTH  PIC 9(2).
+        10  EMP-HIRE-DAY    PIC 9(2).
+    05  EMP-STATUS          PIC X(1).
 ```
 
-**Output (after analysis):**
-```
-       01  EMPLOYEE-RECORD.
-           05  EMP-ID              PIC 9(5).                        1,5
-           05  EMP-NAME            PIC X(30).                       6,30
-           05  EMP-SALARY          PIC 9(7)V99 COMP-3.              36,5
-           05  EMP-HIRE-DATE.                                       41,8
-               10  EMP-HIRE-YEAR   PIC 9(4).                        41,4
-               10  EMP-HIRE-MONTH  PIC 9(2).                        45,2
-               10  EMP-HIRE-DAY    PIC 9(2).                        47,2
-```
+**Hover Information:**
+- **EMP-ID:** Position 000001, Length 000005 bytes, Type: Numeric
+- **EMP-NAME:** Position 000006, Length 000030 bytes, Type: Alphanumeric
+- **EMP-SALARY:** Position 000036, Length 000005 bytes, Type: COMP-3 (Packed Decimal)
+- **EMP-HIRE-DATE:** Position 000041, Length 000008 bytes, Type: Group/Structure
+- **EMP-HIRE-YEAR:** Position 000041, Length 000004 bytes, Type: Numeric
+- **EMP-HIRE-MONTH:** Position 000045, Length 000002 bytes, Type: Numeric
+- **EMP-HIRE-DAY:** Position 000047, Length 000002 bytes, Type: Numeric
+- **EMP-STATUS:** Position 000049, Length 000001 bytes, Type: Alphanumeric
+
+## Commands
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| COBOL Offset: Toggle Active/Inactive | `Ctrl+Shift+O` | Enable/disable the extension |
+| COBOL Offset: Manually Trigger Analysis | `Ctrl+Shift+P` → "Analyze COBOL" | Force re-analysis (optional) |
 
 ## Testing
 
-A sample COBOL file is included (`sample.cbl`). You can use it to test the extension:
+A sample COBOL file is included (`sample.cbl`). To test:
 
 1. Open `sample.cbl`
-2. Press `Ctrl+Shift+O` (or `Cmd+Shift+O` on Mac)
-3. See the offset/length information inserted
+2. Hover over any variable
+3. See the offset/length information in the tooltip
 
-## Testing
+## Unit Tests
 
-### Unit Tests - PIC Clause Calculations
-
-Test that individual PIC clause types are calculated correctly:
-
+Test individual PIC clause calculations:
 ```bash
 node test-calculations.js
 ```
 
-This tests:
-- ✓ Simple numeric: `PIC 9(5)` = 5 bytes
-- ✓ Alphanumeric: `PIC X(20)` = 20 bytes
-- ✓ Signed numeric: `PIC S9(8)` = 8 bytes
-- ✓ Decimal fields: `PIC 9(5)V99` = 7 bytes
-- ✓ And more...
+Test complete COBOL structure parsing:
+```bash
+node test-structure.js
+```
 
-### Integration Tests - Full COBOL Structure
-
-Once unit tests pass, test with complete COBOL structures:
-
-1. Open `test-cobol-types.cbl` (contains various PIC clause types)
-2. Press `Ctrl+Shift+O` to analyze
-3. Hover over each variable to verify offset/length calculations
+Test REDEFINES handling:
+```bash
+node test-redefines-validation.js
+```
 
 ## Development
 
@@ -128,15 +131,13 @@ npm run watch
 
 ### Debug in VSCode
 
-1. Press `F5` to open the extension in debug mode
-2. A new VSCode window will open with your extension loaded
-3. Open a COBOL file and test the analysis
-4. Open DevTools (Help → Toggle Developer Tools) to see debug output
+1. Press `F5` to start debugging
+2. A new VSCode window opens with your extension loaded
+3. Open a COBOL file and test the hover functionality
 
+## Original Algorithm
 
-## Support
-
-For issues or feature requests, please open an issue on the project repository.
+This extension implements the same offset-calculation algorithm that has been running successfully on IBM Mainframe z/OS (REXX) for 20+ years. The logic is based on the proven REXX implementation and has been adapted for VSCode.
 
 ## License
 

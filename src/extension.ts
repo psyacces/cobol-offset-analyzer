@@ -1,54 +1,55 @@
 import * as vscode from 'vscode';
 import { CobolParser } from './cobolParser';
 
+let isActive = true;  // Extension starts active by default
+let statusBarItem: vscode.StatusBarItem;
+
 export function activate(context: vscode.ExtensionContext) {
 	console.log('COBOL Offset Analyzer is now active!');
 
-	let disposable = vscode.commands.registerCommand('cobol-offset.analyze', () => {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			vscode.window.showErrorMessage('No file is open');
-			return;
-		}
+	// Load saved state
+	isActive = context.globalState.get('cobolOffsetActive', true);
 
-		const document = editor.document;
-		const fileName = document.fileName;
+	// Create status bar item
+	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	statusBarItem.command = 'cobol-offset.toggle';
+	updateStatusBar();
+	context.subscriptions.push(statusBarItem);
 
-		// Check if it's a COBOL file
-		if (!isCobolFile(fileName)) {
-			vscode.window.showErrorMessage('This command only works with COBOL files (.cbl, .cob, .cobol)');
-			return;
-		}
+	// Toggle command
+	let toggleDisposable = vscode.commands.registerCommand('cobol-offset.toggle', async () => {
+		isActive = !isActive;
+		await context.globalState.update('cobolOffsetActive', isActive);
+		updateStatusBar();
 
-		try {
-			// Get all lines from the document
-			const lines: string[] = [];
-			for (let i = 0; i < document.lineCount; i++) {
-				lines.push(document.lineAt(i).text);
+		if (isActive) {
+			vscode.window.showInformationMessage('✅ COBOL Offset Analyzer: ACTIVE');
+			// Re-analyze current file if it's COBOL
+			const editor = vscode.window.activeTextEditor;
+			if (editor && isCobolFile(editor.document.fileName)) {
+				analyzeCurrentFile();
 			}
-
-			// Parse the COBOL structure
-			const parser = new CobolParser();
-			const variables = parser.parse(lines);
-
-			if (variables.length === 0) {
-				vscode.window.showWarningMessage('No variables found in this COBOL file');
-				return;
-			}
-
-			// Show success message
-			vscode.window.showInformationMessage(`✅ COBOL analysis complete: ${variables.length} variables analyzed. Hover over variables to see offset/length info.`);
-
-		} catch (error) {
-			vscode.window.showErrorMessage(`Error analyzing COBOL structure: ${error}`);
+		} else {
+			vscode.window.showInformationMessage('❌ COBOL Offset Analyzer: INACTIVE');
 		}
 	});
+	context.subscriptions.push(toggleDisposable);
 
+	// Manual analyze command (for backward compatibility)
+	let disposable = vscode.commands.registerCommand('cobol-offset.analyze', () => {
+		if (!isActive) {
+			vscode.window.showWarningMessage('COBOL Offset Analyzer is disabled. Press Ctrl+Shift+O to enable.');
+			return;
+		}
+		analyzeCurrentFile();
+	});
 	context.subscriptions.push(disposable);
 
-	// Register the hover provider to show offsets
+	// Register the hover provider
 	const hoverProvider = vscode.languages.registerHoverProvider('cobol', {
 		provideHover(document: vscode.TextDocument, position: vscode.Position) {
+			if (!isActive) return null;
+
 			const lines: string[] = [];
 			for (let i = 0; i < document.lineCount; i++) {
 				lines.push(document.lineAt(i).text);
@@ -60,7 +61,6 @@ export function activate(context: vscode.ExtensionContext) {
 			const hoveredLine = position.line;
 			const variable = variables.find(v => v.line === hoveredLine);
 
-			// Show hover for any variable with length info (fields with PIC, groups, or level 01)
 			if (variable && variable.length > 0) {
 				const posStr = String(variable.position).padStart(6, '0');
 				const lenStr = String(variable.length).padStart(6, '0');
@@ -93,14 +93,66 @@ export function activate(context: vscode.ExtensionContext) {
 			return null;
 		}
 	});
-
 	context.subscriptions.push(hoverProvider);
+
+	// Watch for file opens and analyze COBOL files
+	vscode.window.onDidChangeActiveTextEditor(editor => {
+		if (editor && isActive && isCobolFile(editor.document.fileName)) {
+			// Parser runs automatically on hover, no need to do anything here
+		}
+	}, null, context.subscriptions);
+}
+
+function analyzeCurrentFile(): void {
+	const editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		vscode.window.showErrorMessage('No file is open');
+		return;
+	}
+
+	const document = editor.document;
+	if (!isCobolFile(document.fileName)) {
+		vscode.window.showErrorMessage('This command only works with COBOL files (.cbl, .cob, .cobol)');
+		return;
+	}
+
+	try {
+		const lines: string[] = [];
+		for (let i = 0; i < document.lineCount; i++) {
+			lines.push(document.lineAt(i).text);
+		}
+
+		const parser = new CobolParser();
+		const variables = parser.parse(lines);
+
+		if (variables.length === 0) {
+			vscode.window.showWarningMessage('No variables found in this COBOL file');
+			return;
+		}
+
+		vscode.window.showInformationMessage(`✅ COBOL analysis complete: ${variables.length} variables. Hover over variables to see offset/length info.`);
+	} catch (error) {
+		vscode.window.showErrorMessage(`Error analyzing COBOL structure: ${error}`);
+	}
 }
 
 function isCobolFile(fileName: string): boolean {
 	const cobolExtensions = ['.cbl', '.cob', '.cobol'];
 	const lowerName = fileName.toLowerCase();
 	return cobolExtensions.some(ext => lowerName.endsWith(ext));
+}
+
+function updateStatusBar(): void {
+	if (isActive) {
+		statusBarItem.text = '$(check) COBOL Offset: ON';
+		statusBarItem.tooltip = 'COBOL Offset Analyzer is ACTIVE. Click or press Ctrl+Shift+O to disable.';
+		statusBarItem.color = new vscode.ThemeColor('statusBar.foreground');
+	} else {
+		statusBarItem.text = '$(circle-slash) COBOL Offset: OFF';
+		statusBarItem.tooltip = 'COBOL Offset Analyzer is INACTIVE. Click or press Ctrl+Shift+O to enable.';
+		statusBarItem.color = new vscode.ThemeColor('errorForeground');
+	}
+	statusBarItem.show();
 }
 
 export function deactivate() {}
