@@ -1,0 +1,72 @@
+{
+  "name": "cobol-offset-analyzer",
+  "displayName": "COBOL Offset Analyzer",
+  "description": "Analyze COBOL data structures and display offset/length information for each variable",
+  "version": "0.0.1",
+  "publisher": "abraham-villeda",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR-USERNAME/cobol-offset-analyzer"
+  },
+  "author": {
+    "name": "Abraham Villeda",
+    "email": "abraham.villeda@gmail.com"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:cobol",
+    "onCommand:cobol-offset.analyze"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cobol",
+        "aliases": [
+          "COBOL",
+          "cobol"
+        ],
+        "extensions": [
+          ".cbl",
+          ".cob",
+          ".cobol"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "cobol-offset.analyze",
+        "title": "Analyze COBOL Structure - Show Offsets"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cobol-offset.analyze",
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o",
+        "when": "editorLangId == cobol"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.32.0",
+    "typescript": "^5.0.0"
+  }
+}

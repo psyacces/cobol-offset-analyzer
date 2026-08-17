@@ -1,0 +1,315 @@
+/* REXX                       */
+/*  RECUERDA QUE LOS REXX QUE PONGAS AQUI REALMENTE SON POR PURA REF 
+SI QUIERES QUE SE CARGUEN CUANDO SE INICIE EL MAINFRAME RECUERDA        
+QUE LOS TIENES QUE COPAR A LA LIBRERIA                                  
+                                                                                                                                      
+                                                                        
+ISP.SISPEXEC                                                            
+PROFILE NOPREFIX                                                        
+                                                                        
+                                                                        
+TSO ISRDDN PARA VER LA LISTA DE DATASETS ALLOCADOS PARA TU PERFIL       
+PERO NO SUPE BIEN COMO MODIFICARLO O AGREGAR UN NUEVO SYSEXEC           
+                                                                        
+ ISP.SISPPENU  ES PARA LOS PANELES                                      
+ ISP.SISPMENU  ES PARA LOS MENSAJE                                   */
+ 
+"ISREDIT MACRO"
+"ISPEXEC CONTROL ERRORS RETURN"
+"ISREDIT (STAT,VALUE) = NUMBER"
+"ISREDIT NUMBER OFF"
+/* TRACE ?R */
+LINCNT = 0
+LIN = 0
+POS = 1
+GRP = 0
+PLV = '00'
+EOS = 1
+LVC = 0
+OCC = 0
+RED = 0
+SYNC = 0
+SLV  = '00'
+FIRST = 1
+ONUM.OCC = 0
+OLEV.OCC = '00'
+RLEV.RED = '00'
+GLEV.GRP = '00'
+
+DO FOREVER
+   LIN = LIN + 1
+   "ISREDIT (DATL) = LINE" LIN
+   IF RC /= 0 THEN LEAVE
+   IF SUBSTR(DATL,1,2) = '++' THEN ITERATE
+   IF SUBSTR(DATL,3,5) = 'DUMMY' THEN ITERATE
+   IF SUBSTR(DATL,7,1) = '*' THEN ITERATE
+
+   DATL = STRIP(SUBSTR(DATL,8,65))
+   LD = LENGTH(DATL)
+   IF DATL = '' THEN ITERATE
+   IF DATL = 'EJECT' THEN ITERATE
+   IF LEFT(DATL,4) = 'SKIP' THEN ITERATE
+   IF LEFT(DATL,9) = '++INCLUDE' THEN ITERATE
+   IF LEFT(DATL,9) = 'PROCEDURE' THEN LEAVE
+
+   IF EOS = 1 THEN DATA = ''
+
+   IF RIGHT(DATL,1) = '.' THEN DO
+      DATA = DATA!!LEFT(DATL,LD-1)
+      LD   = LENGTH(DATA)
+      EOS  = 1
+   END
+   ELSE DO
+      DATA = DATA!!DATL!!' '
+      EOS  = 0
+      ITERATE
+   END
+
+   IF DATATYPE(SUBWORD(DATA,1,1),N) = 1 THEN
+      LEV = SUBWORD(DATA,1,1)
+   ELSE
+      ITERATE
+
+   LINCNT  = LINCNT +1
+
+   IF FIRST = 1 THEN DO
+      OUTDATA = COPIES(' ',30)!!'DECIMAL POS,LEN              '
+      "ISREDIT LINE_BEFORE" LIN "= MSGLINE '"OUTDATA"'"
+      FIRST = 0
+   END
+
+   IF LEV = '88' THEN ITERATE
+   IF LEV = '66' THEN ITERATE
+   IF LEV = '77' THEN DO
+      LEV = '01'
+   END
+
+   IF RLEV.RED >= LEV THEN DO
+      RLEV.RED = '00'
+      POS = RPOS.RED
+      RED = RED -1
+   END
+
+   IF OLEV.OCC >= LEV THEN DO
+      DO G = GRP TO 1 BY -1
+         IF GLEV.G <= LEV THEN DO
+            POS = GPOS.G + GLEN.G
+            LEAVE
+         END
+      END
+      OLEV.OCC = '00'
+      OCC = OCC - 1
+   END
+
+   IF SYNC = 1 & LEV <= SLV THEN DO
+      SLV  = '00'
+      SYNC = 0
+   END
+
+   IF FIND(DATA,'SYNCHRONIZED') > 0 !,
+      FIND(DATA,'SYNC') > 0 THEN DO
+         SLV  = LEV
+         SYNC = 1
+   END
+
+   IF LEV = '01' THEN POS = 1
+   
+   IF FIND(DATA,'PIC') > 0 !,
+      FIND(DATA,'PICTURE') > 0 THEN DO
+      PIK = FIND(DATA,'PIC')
+      FMT = SUBWORD(DATA,PIK+1,1)
+      LEN = 0
+      CALL PICLEN FMT
+      SELECT
+         WHEN FIND(DATA,'COMP-3') > 0 !,
+              FIND(DATA,'COMPUTATIONAL-3') > 0 THEN
+                LEN = LEN % 2 + 1
+         WHEN FIND(DATA,'COMP') > 0 !,
+              FIND(DATA,'COMPUTATIONAL') > 0 THEN DO
+                  LEN = ((LEN +3) % 4) * 2
+                  IF SYNC = 1 & LEV >= SLV THEN DO
+                     IF LEN <= 4 & ((POS -1)//2) > 0  THEN
+                        POS = POS +1
+                     ELSE
+                        IF LEN > 4 & ((POS-1)//4) > 0 THEN
+                           POS = POS + (4-((POS-1)//4))
+
+                     IF LEV > PLV THEN DO
+                           LPOS.PLV = POS
+                           GPOS.GRP = POS
+                     END
+                  END
+              END
+         OTHERWISE
+                 NOP
+      END
+   END
+
+   IF FIND(DATA,'REDEFINES') > 0 THEN DO
+       RED       = RED +1
+       RLEV.RED  = LEV
+       RPOS.RED  = POS
+       POS = LPOS.LEV
+       IF DATATYPE(POS,N) /= 1 THEN
+          POS = 1
+   END
+
+   IF FIND(DATA,'OCCURS') > 0 THEN DO
+       OCC      =  OCC + 1
+       OLEV.OCC =  LEV
+       IF SUBWORD(DATA,FIND(DATA'OCCURS')+2,1) = 'TO'
+          THEN ONUM.OCC = SUBWORD(DATA,FIND(DATA,'OCCURS')+3,1)
+       ELSE
+           ONUM.OCC = SUBWORD(DATA,FIND(DATA,'OCCURS')+1,1)
+   END
+
+   LPOS.LEV = POS
+
+   IF OLEV.OCC = LEV & PIK > 0 THEN
+      LEN = LEN * ONUM.OCC
+
+   SELECT
+     WHEN LEV < PLV THEN DO
+        DO WHILE GLEV.GRP > LEV
+          G = GRP - 1
+          IF PREVCOPY > 0 THEN DO
+             PREVCOPY = '0'
+             LEAVE
+          END
+
+          IF GLEV.G >= LEV THEN
+            CALL SAYGLEN
+          ELSE
+            LEAVE
+        END
+
+        IF GRP <= 1 THEN CALL INITVAR
+ 
+        PLV  = LEV
+        CALL UPDGRP
+       END
+     WHEN LEV = PLV THEN DO
+        IF GRP <= 1 THEN CALL INITVAR
+        CALL UPDGRP
+       END
+     OTHERWISE
+        DO
+           GRP  = GRP + 1
+           PLV  = LEV
+           CALL UPDGRP
+        END
+   END
+
+
+   IF PIK > 0 THEN DO
+      B1    = COPIES(' ',41-LENGTH(POS))
+      B2    = COPIES(' ',16-LENGTH(LEN))
+      EPOS  = POS + LEN - 1
+      HPOS  = COPIES('0',4-LENGTH(D2X(POS-1)))!!D2X(POS-1)
+      EHPOS = COPIES('0',4-LENGTH(D2X(EPOS-1)))!!D2X(EPOS-1)
+      OUTDATA = B1!!POS!!','!!LEN   
+      "ISREDIT LINE_AFTER" LIN "= MSGLINE '"OUTDATA"'"
+      POS   = POS + LEN
+      PIK   = 0
+   END
+END
+/*End del do forever*/
+
+
+DO WHILE GRP > 1
+  CALL SAYGLEN
+END
+"ISREDIT NUMBER = (STAT,VALUE)"
+EXIT 0
+
+
+
+INITVAR: PROCEDURE EXPOSE GRP POS OCC
+   GRP = 1
+   POS = 1
+   OCC = 0
+RETURN
+
+
+
+
+PICLEN: PROCEDURE EXPOSE LEN
+    ARG PIC
+    IF LEFT(PIC,1) = 'S' THEN PIC = SUBSTR(PIC,2)
+      V = INDEX(PIC,'V')
+      IF V > 0 THEN
+         INT = LEFT(PIC,V-1)
+      ELSE
+         INT = PIC
+         L = INDEX(INT,'(')
+         R = INDEX(INT,')')
+         IF L>0 & R>0 & R>L THEN DO
+             LEN = LEN + L - 2 + SUBSTR(INT,L+1,R-L-1)
+             IF R /= V - 1 THEN DO
+               INT = SUBSTR(INT,R+1)
+               CALL PICLEN INT
+             END
+         END
+    ELSE
+      LEN = LEN + LENGTH(INT)
+      IF V > 0 THEN DO
+          DEC = SUBSTR(PIC,V+1)
+          CALL PICLEN DEC
+    END
+RETURN
+
+
+
+SAYGLEN: PROCEDURE EXPOSE GPOS. GLEN. GLIN. GRP
+    GRP     = GRP - 1
+    B1      = COPIES(' ',41-LENGTH(GPOS.GRP))
+    B2      = COPIES(' ',16-LENGTH(GLEN.GRP))
+    IF GLEN.GRP > 0 THEN DO
+       OUTDATA = B1!!GPOS.GRP!!','!!GLEN.GRP
+       "ISREDIT LINE_AFTER" GLIN.GRP "= MSGLINE '"OUTDATA"'"
+    END
+RETURN
+
+
+
+
+
+UPDGRP: PROCEDURE EXPOSE GPOS. GLEN. GLIN. GLEV. GRP POS LIN LEV,
+RLEV. OLEV. ONUM. RED OCC PIK LEN
+    GPOS.GRP = POS
+    GLEN.GRP = 0
+    GLIN.GRP = LIN
+    GLEV.GRP = LEV
+    IF PIK > 0 THEN DO
+       OCR = 1
+       OCN = 1
+       DO G = GRP TO 1 BY -1
+          SELECT
+          WHEN RED > 0 THEN
+             IF OCC > 0 & GLEV.G >= RLEV.RED THEN
+                IF OLEV.OCC >= GLEV.G & G < GRP THEN DO
+                   DO O = OCC TO 1 BY -1
+                      IF OLEV.O >= RLEV.RED & OLEV.O = GLEV.G THEN
+                         OCR = OCR * ONUM.O
+                   END
+                   GLEN.G = GLEN.G + LEN * OCR
+                   END
+                 ELSE
+                   NOP
+              ELSE
+                 IF RLEV.RED <= GLEV.G THEN
+                    GLEN.G = GLEN.G + LEN
+          WHEN OCC > 0 & OLEV.OCC >= GLEV.G & G < GRP THEN
+            DO
+              DO  O = OCC TO 1 BY -1
+                  IF OLEV.O = GLEV.G THEN
+                      OCN = OCN * ONUM.O
+              END
+              GLEN.G = GLEN.G + LEN * OCN
+            END
+          OTHERWISE
+            GLEN.G = GLEN.G + LEN
+          END
+          END
+       END
+ RETURN
