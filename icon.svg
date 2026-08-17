@@ -1,0 +1,36 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="128" height="128" fill="#1e1e1e" rx="20"/>
+
+  <!-- Main structure - represents data fields -->
+  <g>
+    <!-- Outer box -->
+    <rect x="16" y="24" width="96" height="80" fill="none" stroke="#007acc" stroke-width="2" rx="4"/>
+
+    <!-- Field 1 -->
+    <rect x="24" y="32" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
+    <text x="32" y="42" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 1</text>
+    <text x="80" y="42" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">1,5</text>
+
+    <!-- Field 2 -->
+    <rect x="24" y="48" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
+    <text x="32" y="58" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 2</text>
+    <text x="80" y="58" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">6,30</text>
+
+    <!-- Field 3 -->
+    <rect x="24" y="64" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
+    <text x="32" y="74" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 3</text>
+    <text x="80" y="74" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">36,5</text>
+
+    <!-- Field 4 -->
+    <rect x="24" y="80" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
+    <text x="32" y="90" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 4</text>
+    <text x="80" y="90" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">41,8</text>
+  </g>
+
+  <!-- Hover indicator - small tooltip symbol -->
+  <g transform="translate(104, 16)">
+    <circle cx="0" cy="0" r="8" fill="#ff8c00" opacity="0.9"/>
+    <text x="-2.5" y="3" font-family="Arial" font-size="10" font-weight="bold" fill="white">?</text>
+  </g>
+</svg>
