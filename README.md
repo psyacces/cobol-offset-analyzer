@@ -133,9 +133,6 @@ npm run watch
 3. Open a COBOL file and test the analysis
 4. Open DevTools (Help → Toggle Developer Tools) to see debug output
 
-## Original Algorithm
-
-This extension implements the same offset-calculation algorithm that has been running successfully on IBM Mainframe z/OS (REXX) for 20+ years. The logic is based on the proven REXX implementation and has been adapted for VSCode.
 
 ## Support
 
