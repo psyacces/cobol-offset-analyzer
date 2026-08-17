@@ -1,7 +1,7 @@
 {
   "name": "cobol-offset-analyzer",
   "displayName": "COBOL Offset Analyzer",
-  "description": "Analyze COBOL data structures and display offset/length information for each variable",
+  "description": "Hover over COBOL variables to instantly see their byte offset and length. Auto-active with toggle control. Perfect for analyzing complex COBOL data structures.",
   "version": "0.0.4",
   "publisher": "abraham-villeda",
   "repository": {
