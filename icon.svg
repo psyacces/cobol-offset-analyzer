@@ -1,36 +1,93 @@
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="128" height="128" fill="#1e1e1e" rx="20"/>
+  <defs>
+    <!-- Deep 80's navy backdrop -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#0b1b45"/>
+      <stop offset="55%"  stop-color="#0d2b6b"/>
+      <stop offset="100%" stop-color="#071233"/>
+    </linearGradient>
 
-  <!-- Main structure - represents data fields -->
-  <g>
-    <!-- Outer box -->
-    <rect x="16" y="24" width="96" height="80" fill="none" stroke="#007acc" stroke-width="2" rx="4"/>
+    <!-- Glow behind the wordmark -->
+    <radialGradient id="glow" cx="50%" cy="46%" r="55%">
+      <stop offset="0%"   stop-color="#3b82f6" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
 
-    <!-- Field 1 -->
-    <rect x="24" y="32" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
-    <text x="32" y="42" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 1</text>
-    <text x="80" y="42" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">1,5</text>
+    <!-- Chrome-style fill for CBL -->
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="46%"  stop-color="#bfe9ff"/>
+      <stop offset="54%"  stop-color="#5cc6ff"/>
+      <stop offset="100%" stop-color="#38a8ff"/>
+    </linearGradient>
 
-    <!-- Field 2 -->
-    <rect x="24" y="48" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
-    <text x="32" y="58" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 2</text>
-    <text x="80" y="58" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">6,30</text>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
 
-    <!-- Field 3 -->
-    <rect x="24" y="64" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
-    <text x="32" y="74" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 3</text>
-    <text x="80" y="74" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">36,5</text>
+    <clipPath id="round">
+      <rect width="128" height="128" rx="24"/>
+    </clipPath>
+  </defs>
 
-    <!-- Field 4 -->
-    <rect x="24" y="80" width="80" height="12" fill="#007acc" opacity="0.2" rx="2"/>
-    <text x="32" y="90" font-family="monospace" font-size="10" font-weight="bold" fill="#007acc">Field 4</text>
-    <text x="80" y="90" font-family="monospace" font-size="9" font-weight="bold" fill="#ff8c00">41,8</text>
+  <!-- Backdrop -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+
+  <g clip-path="url(#round)">
+    <rect width="128" height="128" fill="url(#glow)"/>
+
+    <!-- Retro perspective grid -->
+    <g stroke="#38bdf8" stroke-width="1" opacity="0.22">
+      <path d="M-10 108 H138"/>
+      <path d="M-10 118 H138"/>
+      <path d="M64 98 L14 128"/>
+      <path d="M64 98 L44 128"/>
+      <path d="M64 98 L64 128"/>
+      <path d="M64 98 L84 128"/>
+      <path d="M64 98 L114 128"/>
+    </g>
+
+    <!-- CRT scanlines -->
+    <g stroke="#0a1633" stroke-width="1" opacity="0.30">
+      <path d="M0 20 H128"/><path d="M0 26 H128"/><path d="M0 32 H128"/>
+      <path d="M0 38 H128"/><path d="M0 44 H128"/><path d="M0 50 H128"/>
+      <path d="M0 56 H128"/><path d="M0 62 H128"/><path d="M0 68 H128"/>
+      <path d="M0 74 H128"/><path d="M0 80 H128"/><path d="M0 86 H128"/>
+      <path d="M0 92 H128"/><path d="M0 98 H128"/>
+    </g>
   </g>
 
-  <!-- Hover indicator - small tooltip symbol -->
-  <g transform="translate(104, 16)">
-    <circle cx="0" cy="0" r="8" fill="#ff8c00" opacity="0.9"/>
-    <text x="-2.5" y="3" font-family="Arial" font-size="10" font-weight="bold" fill="white">?</text>
+  <!-- Outer arcade bezel -->
+  <rect x="6.5" y="6.5" width="115" height="115" rx="19"
+        fill="none" stroke="#38bdf8" stroke-width="3"/>
+  <rect x="12.5" y="12.5" width="103" height="103" rx="14"
+        fill="none" stroke="#1d6fd8" stroke-width="1.5" opacity="0.85"/>
+
+  <!-- Corner brackets -->
+  <g stroke="#a5e8ff" stroke-width="2.5" stroke-linecap="square" fill="none" opacity="0.95">
+    <path d="M22 30 V22 H30"/>
+    <path d="M98 22 H106 V30"/>
+    <path d="M106 98 V106 H98"/>
+    <path d="M30 106 H22 V98"/>
   </g>
+
+  <!-- Wordmark -->
+  <g font-family="'Menlo','DejaVu Sans Mono','Courier New',monospace" font-weight="bold" text-anchor="middle">
+    <!-- offset drop shadow -->
+    <text x="66.5" y="71.5" font-size="39" letter-spacing="1" fill="#0b3aa0" opacity="0.9">CBL</text>
+    <!-- neon halo -->
+    <text x="64" y="69" font-size="39" letter-spacing="1" fill="#38bdf8" opacity="0.55" filter="url(#neon)">CBL</text>
+    <!-- chrome face -->
+    <text x="64" y="69" font-size="39" letter-spacing="1" fill="url(#chrome)">CBL</text>
+  </g>
+
+  <!-- OFFSET plate -->
+  <rect x="30" y="78" width="68" height="15" rx="3.5" fill="#0a1c4a" stroke="#38bdf8" stroke-width="1.2"/>
+  <text x="64" y="89.2" text-anchor="middle"
+        font-family="'Menlo','DejaVu Sans Mono','Courier New',monospace"
+        font-size="9.5" font-weight="bold" letter-spacing="2.6" fill="#ffb020">OFFSET</text>
 </svg>
