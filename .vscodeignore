@@ -1,0 +1,32 @@
+# NOTE: out/ must NOT be listed here.
+# package.json declares "main": "./out/extension.js", so out/ is the only
+# code the packaged extension actually runs.
+
+# COBOL reference / test copybooks
+real.cbl
+sample.cbl
+test-*.cbl
+
+# Local test scripts
+test-*.js
+
+# TypeScript sources and build config (only the compiled out/ ships)
+src/**
+**/*.ts
+**/*.map
+tsconfig.json
+
+# Internal scripts and docs
+publish.sh
+PUBLISH.md
+MARKETPLACE.md
+
+# Repo / tooling metadata
+.gitignore
+.vscodeignore
+.git/**
+.github/**
+.vscode/**
+.claude/**
+*.vsix
+.DS_Store
