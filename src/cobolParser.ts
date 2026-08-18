@@ -1,5 +1,8 @@
 export interface ParsedVariable {
+    /** 0-based line where the level number / name appears (start of the statement). */
     line: number;
+    /** 0-based line where the statement's terminating period appears. */
+    endLine: number;
     level: string;
     name: string;
     position: number;
@@ -12,395 +15,546 @@ export interface ParsedVariable {
     isComp3: boolean;
     rawLine: string;
     dataType: string;
+    picture: string;
+    usage: Usage;
+    occursCount: number;
+    redefinesTarget: string;
 }
 
-interface GroupInfo {
-    level: string;
-    position: number;
-    length: number;
-    line: number;
+export type Usage =
+    | 'DISPLAY'
+    | 'BINARY'
+    | 'PACKED'
+    | 'COMP-1'
+    | 'COMP-2'
+    | 'INDEX'
+    | 'POINTER'
+    | 'NATIONAL';
+
+interface Frame {
+    level: number;
     name: string;
-    isRedefines?: boolean;
+    startLine: number;
+    endLine: number;
+    position: number;
+    /** Bytes contributed by direct children (one OCCURS iteration). */
+    length: number;
+    isRedefines: boolean;
+    isOccurs: boolean;
+    isSynchronized: boolean;
+    occurs: number;
+    /** Position to restore when a REDEFINES frame closes. */
+    savedPos: number;
+    redefinesTarget: string;
+    rawLine: string;
+}
+
+/** Result of decoding a PICTURE character-string. */
+export interface PictureInfo {
+    /** Bytes the picture occupies under USAGE DISPLAY. */
+    displayBytes: number;
+    /** Digit positions (9, Z, *, P and friends) — drives COMP / COMP-3 sizing. */
+    digits: number;
+    signed: boolean;
+    hasDecimal: boolean;
+    category: 'numeric' | 'numeric-edited' | 'alphanumeric' | 'alphabetic' | 'national';
 }
 
 export class CobolParser {
-    private pos: number = 1;
-    private plv: string = '00';
-    private occ: number = 0;
-    private red: number = 0;
-    private sync: boolean = false;
-    private slv: string = '00';
-    private positionBeforeRedefines: number = 1;
-
-    private lposMap: Map<string, number> = new Map();
-    private groupStack: GroupInfo[] = [];
+    private pos = 1;
+    private stack: Frame[] = [];
     private results: ParsedVariable[] = [];
-    private olevArray: string[] = [];
-    private onumArray: number[] = [];
-    private rlevArray: string[] = [];
-    private rposArray: number[] = [];
+    /** name -> position, for resolving REDEFINES targets by name. */
+    private namePos = new Map<string, number>();
+    /** level -> position of the most recent item at that level (REDEFINES fallback). */
+    private levelPos = new Map<number, number>();
 
     public parse(cobolLines: string[]): ParsedVariable[] {
-        const results: ParsedVariable[] = [];
-        let data = '';
         this.pos = 1;
-        this.plv = '00';
-        this.positionBeforeRedefines = 1;
-        this.lposMap.clear();
-        this.groupStack = [];
+        this.stack = [];
         this.results = [];
-        this.olevArray = [];
-        this.onumArray = [];
-        this.rlevArray = [];
-        this.rposArray = [];
+        this.namePos.clear();
+        this.levelPos.clear();
+
+        let buffer = '';
+        let startLine = -1;
 
         for (let lineNum = 0; lineNum < cobolLines.length; lineNum++) {
-            let datl = this.cleanLine(cobolLines[lineNum]);
+            const text = this.cleanLine(cobolLines[lineNum]);
+            if (text === '') continue;
 
-            if (datl === '' || datl === 'EJECT' || datl.startsWith('SKIP') || datl.startsWith('++INCLUDE') || datl.startsWith('PROCEDURE')) {
+            const upper = text.toUpperCase();
+            if (upper.startsWith('PROCEDURE DIVISION')) break;
+            if (upper === 'EJECT' || upper === 'EJECT.' || upper.startsWith('SKIP') || upper.startsWith('++INCLUDE')) {
                 continue;
             }
 
-            // Handle line continuation
-            if (datl.endsWith('.')) {
-                data += datl.substring(0, datl.length - 1);
-                this.processLine(data, lineNum, results);
-                data = '';
+            if (startLine < 0) startLine = lineNum;
+
+            if (text.endsWith('.')) {
+                this.processEntry(buffer + text.substring(0, text.length - 1), startLine, lineNum);
+                buffer = '';
+                startLine = -1;
             } else {
-                data += datl + ' ';
-                continue;
+                buffer += text + ' ';
             }
         }
 
-        // Close all remaining groups
-        this.closeGroupsUntil('00', results);
+        // Flush an unterminated trailing statement, then close every open group.
+        if (buffer.trim() !== '' && startLine >= 0) {
+            this.processEntry(buffer, startLine, cobolLines.length - 1);
+        }
+        this.closeFramesDownTo(0);
 
-        return results;
+        // Emit in source order so hover lookup and test output are both predictable.
+        this.results.sort((a, b) => a.line - b.line || a.level.localeCompare(b.level));
+        return this.results;
     }
+
+    // ---------------------------------------------------------------- lines
 
     private cleanLine(line: string): string {
-        if (line.length < 8) return '';
+        if (!line) return '';
         if (line.substring(0, 2) === '++') return '';
         if (line.substring(2, 7) === 'DUMMY') return '';
-        if (line.substring(6, 7) === '*') return '';
 
-        const cleaned = line.substring(7, 72).trim();
-        return cleaned;
+        // Fixed-format comment / continuation indicator in column 7.
+        if (line.length >= 7) {
+            const indicator = line[6];
+            if (indicator === '*' || indicator === '/') return '';
+        }
+        if (line.trimStart().startsWith('*')) return '';
+
+        // Columns 8-72 hold the code area in fixed format; fall back to the whole
+        // line for free-format sources that start in column 1.
+        let body = line.length >= 8 ? line.substring(7, 72) : line;
+        if (body.trim() === '' && line.trim() !== '') body = line;
+
+        let text = body.trim();
+        const inlineComment = text.indexOf('*>');
+        if (inlineComment >= 0) text = text.substring(0, inlineComment).trim();
+
+        return text;
     }
 
-    private processLine(data: string, lineNum: number, results: ParsedVariable[]): void {
-        const level = this.extractLevel(data);
-        if (!level) return;
+    // ------------------------------------------------------------- entries
 
-        if (level === '88' || level === '66') return;
+    private processEntry(data: string, startLine: number, endLine: number): void {
+        data = data.replace(/\s+/g, ' ').trim();
 
-        let lev = level;
-        if (level === '77') lev = '01';
+        const levelMatch = data.match(/^(\d{1,2})(?:\s|$)/);
+        if (!levelMatch) return;
 
-        // Close groups that are deeper than current level
-        this.closeGroupsUntil(lev, results);
+        let levelNum = parseInt(levelMatch[1], 10);
+        // 88 (condition names) and 66 (RENAMES) occupy no storage of their own.
+        if (levelNum === 88 || levelNum === 66) return;
+        // 77 is an independent elementary item — behaves like an 01.
+        if (levelNum === 77) levelNum = 1;
+        if (levelNum < 1 || levelNum > 49) return;
 
-        // Handle REDEFINES
-        if (data.includes('REDEFINES')) {
-            this.red++;
-            this.rlevArray[this.red] = lev;
-            this.rposArray[this.red] = this.pos;
-            // Save position before entering REDEFINES
-            this.positionBeforeRedefines = this.pos;
-            const redefinedPos = this.lposMap.get(lev);
-            this.pos = (redefinedPos !== undefined) ? redefinedPos : 1;
+        const tokens = data.split(' ');
+        const name = tokens.length > 1 ? tokens[1].toUpperCase() : 'FILLER';
+        // Clause text excludes level and name, so a variable called WS-COMP-FLAG
+        // can never be mistaken for USAGE COMPUTATIONAL.
+        const clauses = tokens.slice(2).join(' ').toUpperCase();
+
+        this.closeFramesDownTo(levelNum);
+
+        if (levelNum === 1) this.pos = 1;
+
+        const redefinesMatch = clauses.match(/\bREDEFINES\s+([A-Z0-9$#@-]+)/);
+        const isRedefines = redefinesMatch !== null;
+        const redefinesTarget = redefinesMatch ? redefinesMatch[1] : '';
+
+        const savedPos = this.pos;
+        if (isRedefines) {
+            this.pos = this.resolveRedefinesPosition(redefinesTarget, levelNum);
         }
 
-        // Handle OCCURS
-        let occursCount = 1;
-        if (data.includes('OCCURS')) {
-            this.occ++;
-            this.olevArray[this.occ] = lev;
-            const occMatch = data.match(/OCCURS\s+(\d+)/);
-            occursCount = occMatch ? parseInt(occMatch[1]) : 1;
-            this.onumArray[this.occ] = occursCount;
-        }
+        const occursMatch = clauses.match(/\bOCCURS\s+(\d+)(?:\s+TO\s+(\d+))?/);
+        const isOccurs = occursMatch !== null;
+        // For OCCURS n TO m DEPENDING ON, size the layout with the maximum.
+        const occurs = occursMatch ? parseInt(occursMatch[2] ?? occursMatch[1], 10) : 1;
 
-        if (lev === '01') {
-            this.pos = 1;
-        }
+        const isSynchronized = /\b(SYNCHRONIZED|SYNC)\b/.test(clauses);
+        const usage = this.detectUsage(clauses);
 
-        // Handle SYNCHRONIZED
-        const isSynchronized = data.includes('SYNCHRONIZED') || data.includes('SYNC');
-        if (isSynchronized) {
-            this.slv = lev;
-            this.sync = true;
-        }
+        const picMatch = clauses.match(/\b(?:PIC|PICTURE)\b(?:\s+IS\b)?\s+(\S+)/);
+        const picture = picMatch ? picMatch[1] : '';
+        const hasPic = picture !== '';
 
-        let len = 0;
-        const hasPic = data.includes('PIC') || data.includes('PICTURE');
-        const isComp = data.includes('COMP') && !data.includes('COMP-3');
-        const isComp3 = data.includes('COMP-3') || data.includes('COMPUTATIONAL-3');
+        this.namePos.set(name, this.pos);
+        this.levelPos.set(levelNum, this.pos);
 
-        if (hasPic) {
-            const picMatch = data.match(/PIC\s+S?([X9A-Za-z()\d]+)/);
-            if (picMatch) {
-                len = this.calculatePicLength(picMatch[1]);
+        if (hasPic || this.isElementaryWithoutPic(usage)) {
+            const pic = this.parsePicture(picture);
+            let len = this.elementarySize(pic, usage);
 
-                if (isComp3) {
-                    len = Math.floor(len / 2) + 1;
-                } else if (isComp) {
-                    len = (Math.floor((len + 3) / 4)) * 2;
-                    if (this.sync && lev >= this.slv) {
-                        if (len <= 4 && ((this.pos - 1) % 2) > 0) {
-                            this.pos++;
-                        } else if (len > 4 && ((this.pos - 1) % 4) > 0) {
-                            this.pos += 4 - ((this.pos - 1) % 4);
-                        }
-                    }
-                }
+            if (isSynchronized) this.pos = this.alignFor(this.pos, len, usage);
+            // Position may have moved for alignment — re-record it.
+            this.namePos.set(name, this.pos);
+            this.levelPos.set(levelNum, this.pos);
 
-                // Apply OCCURS multiplier if at correct level
-                if (this.olevArray[this.occ] === lev) {
-                    len = len * occursCount;
-                }
-            }
-        }
+            const total = len * occurs;
 
-        this.lposMap.set(lev, this.pos);
-
-        if (hasPic && len > 0) {
-            // Field with PIC - add to results and update groups
-            const picMatch = data.match(/PIC\s+S?([X9A-Za-z()\d]+)/);
-            const dataType = this.determineDataType(picMatch ? picMatch[1] : '', isComp, isComp3);
-
-            const result: ParsedVariable = {
-                line: lineNum,
-                level: lev,
-                name: this.extractName(data),
+            this.results.push({
+                line: startLine,
+                endLine,
+                level: this.pad2(levelNum),
+                name,
                 position: this.pos,
-                length: len,
-                hasPic: true,
-                isOccurs: data.includes('OCCURS'),
-                isRedefines: data.includes('REDEFINES'),
-                isSynchronized: isSynchronized,
-                isComp: isComp,
-                isComp3: isComp3,
+                length: total,
+                hasPic,
+                isOccurs,
+                isRedefines,
+                isSynchronized,
+                isComp: usage === 'BINARY',
+                isComp3: usage === 'PACKED',
                 rawLine: data,
-                dataType: dataType
-            };
+                dataType: this.describeType(pic, usage, false, isRedefines),
+                picture,
+                usage,
+                occursCount: occurs,
+                redefinesTarget
+            });
 
-            results.push(result);
-
-            // Update parent group lengths and position tracking
-            const isInsideRedefinesGroup = this.groupStack.some(g => g.isRedefines);
-            const isFieldRedefines = data.includes('REDEFINES');
-
-            if (isInsideRedefinesGroup) {
-                // Field inside REDEFINES: update only the REDEFINES group, advance position
-                if (this.groupStack.length > 0) {
-                    this.groupStack[this.groupStack.length - 1].length += len;
-                }
-                this.pos += len;
-            } else if (!isFieldRedefines) {
-                // Normal field: update all parents and advance position
-                for (let i = 0; i < this.groupStack.length; i++) {
-                    this.groupStack[i].length += len;
-                }
-                this.pos += len;
-            }
-            // If field itself is REDEFINES, don't update parents or position
-
-            this.plv = lev;
-
-        } else if (!hasPic) {
-            // Group header (no PIC) - push to group stack
-            const groupInfo: GroupInfo = {
-                level: lev,
-                position: this.pos,
-                length: 0,
-                line: lineNum,
-                name: this.extractName(data),
-                isRedefines: data.includes('REDEFINES')
-            };
-
-            this.groupStack.push(groupInfo);
-            this.plv = lev;
-        }
-    }
-
-    private closeGroupsUntil(targetLevel: string, results: ParsedVariable[]): void {
-        // Close all groups deeper than or equal to target level (when new field at same level)
-        while (this.groupStack.length > 0) {
-            const lastGroup = this.groupStack[this.groupStack.length - 1];
-
-            // Close group if it's deeper than target, OR at same level (sibling)
-            if (lastGroup.level < targetLevel) {
-                break;
-            }
-
-            const wasRedefines = lastGroup.isRedefines || false;
-
-            // Pop and create result for this group
-            this.groupStack.pop();
-
-            // Create result even for REDEFINES groups (they have length from their children)
-            if (lastGroup.length > 0) {
-                const result: ParsedVariable = {
-                    line: lastGroup.line,
-                    level: lastGroup.level,
-                    name: this.extractGroupName(lastGroup),
-                    position: lastGroup.position,
-                    length: lastGroup.length,
-                    hasPic: false,
-                    isOccurs: false,
-                    isRedefines: wasRedefines,
-                    isSynchronized: false,
-                    isComp: false,
-                    isComp3: false,
-                    rawLine: '',
-                    dataType: wasRedefines ? 'Group/Structure (REDEFINES)' : 'Group/Structure'
-                };
-
-                results.push(result);
-
-                // Note: Do NOT update parent groups here!
-                // The child fields already updated parent groups when they were processed
-            }
-
-            // If this was a REDEFINES group, restore position to what it was before
-            if (wasRedefines) {
-                this.pos = this.positionBeforeRedefines;
-            }
-        }
-    }
-
-    private extractLevel(data: string): string | null {
-        const match = data.match(/^(\d{2})\s/);
-        if (match && /^\d+$/.test(match[1])) {
-            return match[1];
-        }
-        return null;
-    }
-
-    private extractName(data: string): string {
-        const parts = data.split(/\s+/);
-        if (parts.length > 1) {
-            return parts[1];
-        }
-        return '';
-    }
-
-    private extractGroupName(group: GroupInfo): string {
-        return group.name;
-    }
-
-    public calculatePicLength(pic: string): number {
-        pic = pic.trim().toUpperCase();
-
-        // Remove leading S (sign)
-        if (pic.startsWith('S')) {
-            pic = pic.substring(1);
-        }
-
-        let length = 0;
-
-        // Handle V for decimal point
-        const vIndex = pic.indexOf('V');
-        let intPart = vIndex > 0 ? pic.substring(0, vIndex) : pic;
-        let decPart = vIndex > 0 ? pic.substring(vIndex + 1) : '';
-
-        // Calculate integer part
-        length += this.calculateSinglePicPart(intPart);
-
-        // Calculate decimal part if exists
-        if (decPart.length > 0) {
-            length += this.calculateSinglePicPart(decPart);
-        }
-
-        return length;
-    }
-
-    private calculateSinglePicPart(part: string): number {
-        let length = 0;
-        let i = 0;
-
-        while (i < part.length) {
-            const char = part[i];
-
-            if (char === '(') {
-                // Skip opening paren
-                i++;
-            } else if (char === ')') {
-                // Skip closing paren
-                i++;
-            } else if (char === '.' || char === ' ') {
-                // Skip period and spaces
-                i++;
+            if (isRedefines) {
+                // Shares storage with its target: contributes nothing, and the
+                // cursor goes back to where the redefined item ended.
+                this.pos = savedPos;
             } else {
-                // This is a picture character (9, X, A, Z, etc)
-                // Check if next char is '('
-                if (i + 1 < part.length && part[i + 1] === '(') {
-                    // Extract the count: 9(5) -> count is 5
-                    const closeIdx = part.indexOf(')', i + 1);
-                    if (closeIdx > i + 1) {
-                        const countStr = part.substring(i + 2, closeIdx);
-                        const count = parseInt(countStr);
-                        if (!isNaN(count)) {
-                            length += count;
-                        }
-                        i = closeIdx + 1;
-                    } else {
-                        i++;
-                    }
-                } else {
-                    // Single character without repetition (9, X, A, etc)
-                    length += 1;
-                    i++;
+                this.addToParent(total);
+                this.pos += total;
+            }
+            return;
+        }
+
+        // Group item — its size is the sum of its children, resolved on close.
+        this.stack.push({
+            level: levelNum,
+            name,
+            startLine,
+            endLine,
+            position: this.pos,
+            length: 0,
+            isRedefines,
+            isOccurs,
+            isSynchronized,
+            occurs,
+            savedPos,
+            redefinesTarget,
+            rawLine: data
+        });
+    }
+
+    /**
+     * Pops every open group at or below `levelNum`, rolling each one's size into
+     * its parent. A REDEFINES group rolls up nothing and rewinds the cursor to
+     * the byte after the item it redefines.
+     */
+    private closeFramesDownTo(levelNum: number): void {
+        while (this.stack.length > 0 && this.stack[this.stack.length - 1].level >= levelNum) {
+            const frame = this.stack.pop()!;
+            const total = frame.length * frame.occurs;
+
+            this.results.push({
+                line: frame.startLine,
+                endLine: frame.endLine,
+                level: this.pad2(frame.level),
+                name: frame.name,
+                position: frame.position,
+                length: total,
+                hasPic: false,
+                isOccurs: frame.isOccurs,
+                isRedefines: frame.isRedefines,
+                isSynchronized: frame.isSynchronized,
+                isComp: false,
+                isComp3: false,
+                rawLine: frame.rawLine,
+                dataType: this.describeType(null, 'DISPLAY', true, frame.isRedefines),
+                picture: '',
+                usage: 'DISPLAY',
+                occursCount: frame.occurs,
+                redefinesTarget: frame.redefinesTarget
+            });
+
+            if (frame.isRedefines) {
+                this.pos = frame.savedPos;
+            } else {
+                this.addToParent(total);
+                // Re-seat the cursor: for an OCCURS group the children only walked
+                // one iteration forward.
+                this.pos = frame.position + total;
+            }
+        }
+    }
+
+    /** Only the immediate parent accumulates; sizes roll up one level at a time. */
+    private addToParent(len: number): void {
+        if (this.stack.length > 0) {
+            this.stack[this.stack.length - 1].length += len;
+        }
+    }
+
+    private resolveRedefinesPosition(target: string, levelNum: number): number {
+        const byName = this.namePos.get(target);
+        if (byName !== undefined) return byName;
+        const byLevel = this.levelPos.get(levelNum);
+        if (byLevel !== undefined) return byLevel;
+        return this.pos;
+    }
+
+    // -------------------------------------------------------------- usage
+
+    private detectUsage(clauses: string): Usage {
+        if (/\b(COMP-3|COMPUTATIONAL-3|PACKED-DECIMAL)\b/.test(clauses)) return 'PACKED';
+        if (/\b(COMP-1|COMPUTATIONAL-1)\b/.test(clauses)) return 'COMP-1';
+        if (/\b(COMP-2|COMPUTATIONAL-2)\b/.test(clauses)) return 'COMP-2';
+        if (/\b(COMP-5|COMPUTATIONAL-5|COMP-4|COMPUTATIONAL-4|BINARY|COMP|COMPUTATIONAL)\b/.test(clauses)) {
+            return 'BINARY';
+        }
+        if (/\bINDEX\b/.test(clauses)) return 'INDEX';
+        if (/\b(POINTER|PROCEDURE-POINTER|FUNCTION-POINTER)\b/.test(clauses)) return 'POINTER';
+        if (/\bNATIONAL\b/.test(clauses)) return 'NATIONAL';
+        return 'DISPLAY';
+    }
+
+    /** USAGE clauses that define storage on their own, with no PICTURE. */
+    private isElementaryWithoutPic(usage: Usage): boolean {
+        return usage === 'COMP-1' || usage === 'COMP-2' || usage === 'INDEX' || usage === 'POINTER';
+    }
+
+    private elementarySize(pic: PictureInfo, usage: Usage): number {
+        switch (usage) {
+            case 'COMP-1':
+                return 4;
+            case 'COMP-2':
+                return 8;
+            case 'INDEX':
+            case 'POINTER':
+                return 4;
+            case 'PACKED':
+                // Packed decimal: two digits per byte plus a nibble for the sign.
+                return Math.floor(pic.digits / 2) + 1;
+            case 'BINARY':
+                return this.binarySize(pic.digits);
+            case 'NATIONAL':
+                return pic.displayBytes * 2;
+            default:
+                return pic.displayBytes;
+        }
+    }
+
+    /** IBM COMP sizing: halfword / fullword / doubleword by digit count. */
+    private binarySize(digits: number): number {
+        if (digits <= 0) return 0;
+        if (digits <= 4) return 2;
+        if (digits <= 9) return 4;
+        if (digits <= 18) return 8;
+        return 16;
+    }
+
+    private alignFor(pos: number, len: number, usage: Usage): number {
+        let boundary = 1;
+        if (usage === 'BINARY' || usage === 'COMP-1' || usage === 'COMP-2' ||
+            usage === 'INDEX' || usage === 'POINTER') {
+            boundary = len >= 8 ? 8 : len >= 4 ? 4 : 2;
+        }
+        if (boundary <= 1) return pos;
+
+        const offset = pos - 1;
+        const slack = offset % boundary;
+        return slack === 0 ? pos : pos + (boundary - slack);
+    }
+
+    // ------------------------------------------------------------ picture
+
+    /**
+     * Decodes a PICTURE character-string into byte count and digit count.
+     * Handles repetition factors, insertion editing, floating sign/currency,
+     * implied decimals (V), scaling (P) and CR/DB.
+     */
+    public parsePicture(rawPic: string): PictureInfo {
+        const info: PictureInfo = {
+            displayBytes: 0,
+            digits: 0,
+            signed: false,
+            hasDecimal: false,
+            category: 'alphanumeric'
+        };
+        if (!rawPic) return info;
+
+        const pic = rawPic.trim().toUpperCase();
+        let sawNumericSymbol = false;
+        let sawEditSymbol = false;
+        let sawAlpha = false;
+        let sawAlphabetic = false;
+        let sawNational = false;
+
+        let i = 0;
+        while (i < pic.length) {
+            // CR / DB are two-character credit/debit symbols worth 2 bytes.
+            const pair = pic.substring(i, i + 2);
+            if (pair === 'CR' || pair === 'DB') {
+                info.displayBytes += 2;
+                sawEditSymbol = true;
+                i += 2;
+                continue;
+            }
+
+            const symbol = pic[i];
+            i++;
+
+            // A repetition factor in parentheses, e.g. 9(5).
+            let count = 1;
+            if (pic[i] === '(') {
+                const close = pic.indexOf(')', i);
+                if (close > i) {
+                    const parsed = parseInt(pic.substring(i + 1, close), 10);
+                    if (!isNaN(parsed)) count = parsed;
+                    i = close + 1;
                 }
+            }
+
+            switch (symbol) {
+                case 'S':
+                    // Sign is overpunched on a digit: no storage of its own.
+                    info.signed = true;
+                    sawNumericSymbol = true;
+                    break;
+                case 'V':
+                    // Implied decimal point: no storage.
+                    info.hasDecimal = true;
+                    sawNumericSymbol = true;
+                    break;
+                case 'P':
+                    // Scaling position: counts as a digit, occupies no byte.
+                    info.digits += count;
+                    sawNumericSymbol = true;
+                    break;
+                case '9':
+                    info.displayBytes += count;
+                    info.digits += count;
+                    sawNumericSymbol = true;
+                    break;
+                case 'Z':
+                case '*':
+                    info.displayBytes += count;
+                    info.digits += count;
+                    sawEditSymbol = true;
+                    break;
+                case 'X':
+                    info.displayBytes += count;
+                    sawAlpha = true;
+                    break;
+                case 'A':
+                    info.displayBytes += count;
+                    sawAlphabetic = true;
+                    break;
+                case 'N':
+                    // National / DBCS: two bytes per character position.
+                    info.displayBytes += count * 2;
+                    sawNational = true;
+                    break;
+                case 'G':
+                    info.displayBytes += count * 2;
+                    sawNational = true;
+                    break;
+                case 'B':
+                case '0':
+                case '/':
+                case ',':
+                    info.displayBytes += count;
+                    sawEditSymbol = true;
+                    break;
+                case '.':
+                    info.displayBytes += count;
+                    info.hasDecimal = true;
+                    sawEditSymbol = true;
+                    break;
+                case '+':
+                case '-':
+                case '$':
+                    // Fixed or floating insertion: one byte per symbol written.
+                    info.displayBytes += count;
+                    info.signed = symbol !== '$';
+                    sawEditSymbol = true;
+                    break;
+                case 'E':
+                    info.displayBytes += count;
+                    sawEditSymbol = true;
+                    break;
+                default:
+                    break;
             }
         }
 
-        return length;
+        if (sawNational) info.category = 'national';
+        else if (sawAlpha) info.category = 'alphanumeric';
+        else if (sawAlphabetic) info.category = 'alphabetic';
+        else if (sawEditSymbol) info.category = 'numeric-edited';
+        else if (sawNumericSymbol) info.category = 'numeric';
+
+        return info;
     }
 
-    private determineDataType(pic: string, isComp: boolean, isComp3: boolean): string {
-        pic = pic.trim().toUpperCase();
+    /** Kept public for the unit tests: bytes a picture occupies under DISPLAY. */
+    public calculatePicLength(pic: string): number {
+        return this.parsePicture(pic).displayBytes;
+    }
 
-        if (isComp3) {
-            return 'COMP-3 (Packed Decimal)';
+    /** Kept public for the unit tests: digit positions in a picture. */
+    public calculatePicDigits(pic: string): number {
+        return this.parsePicture(pic).digits;
+    }
+
+    // --------------------------------------------------------------- types
+
+    private describeType(
+        pic: PictureInfo | null,
+        usage: Usage,
+        isGroup: boolean,
+        isRedefines: boolean
+    ): string {
+        if (isGroup) {
+            return isRedefines ? 'Group/Structure (REDEFINES)' : 'Group/Structure';
         }
 
-        if (isComp) {
-            return 'COMP (Binary)';
+        switch (usage) {
+            case 'PACKED':
+                return 'COMP-3 (Packed Decimal)';
+            case 'BINARY':
+                return 'COMP (Binary)';
+            case 'COMP-1':
+                return 'COMP-1 (Single-Precision Float)';
+            case 'COMP-2':
+                return 'COMP-2 (Double-Precision Float)';
+            case 'INDEX':
+                return 'INDEX';
+            case 'POINTER':
+                return 'POINTER';
+            case 'NATIONAL':
+                return 'National (DBCS)';
         }
 
-        if (!pic) {
-            return 'Alphanumeric';
-        }
+        if (!pic) return 'Alphanumeric';
 
-        // Remove leading S (sign)
-        if (pic.startsWith('S')) {
-            pic = pic.substring(1);
-        }
-
-        // Check first character
-        const firstChar = pic.charAt(0);
-
-        switch (firstChar) {
-            case 'X':
-            case 'A':
-            case 'B':
-                return 'Alphanumeric';
-            case '9':
-                if (pic.includes('V')) {
-                    return 'Numeric with Decimal';
-                }
-                return 'Numeric';
-            case 'Z':
-            case '*':
+        switch (pic.category) {
+            case 'numeric':
+                if (pic.hasDecimal) return pic.signed ? 'Signed Numeric with Decimal' : 'Numeric with Decimal';
+                return pic.signed ? 'Signed Numeric' : 'Numeric';
+            case 'numeric-edited':
                 return 'Numeric Edited';
-            case '$':
-            case '+':
-            case '-':
-                return 'Numeric Edited';
+            case 'alphabetic':
+                return 'Alphabetic';
+            case 'national':
+                return 'National (DBCS)';
             default:
                 return 'Alphanumeric';
         }
+    }
+
+    private pad2(n: number): string {
+        return n < 10 ? '0' + n : String(n);
     }
 }

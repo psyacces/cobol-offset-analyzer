@@ -11,13 +11,25 @@ A VSCode extension that analyzes COBOL data structures and displays the offset (
 - 💾 **Persistent State** - Remembers if extension is active/inactive between sessions
 - 🔄 **Toggle On/Off** - Easy enable/disable with Ctrl+Shift+O or status bar click
 - ✅ **Supports All COBOL Features:**
-  - PIC clause length calculation
-  - COMP and COMP-3 numeric formats
-  - OCCURS clause for arrays
-  - **REDEFINES clause** - Shows redefined field positions/lengths AND correctly excludes redefined bytes from parent totals
-  - SYNCHRONIZED fields
-  - Nested groups and subgroups
-  - Complex scenarios (cascading REDEFINES, REDEFINES with OCCURS, field-level REDEFINES)
+  - Full PICTURE decoding, including edited pictures (`ZZ,ZZ9.99`, `$$$,$$9.99CR`, `----9.99`), `V`, `S` and `P`
+  - Every USAGE: `DISPLAY`, `COMP`/`COMP-4`/`BINARY`/`COMP-5`, `COMP-1`, `COMP-2`, `COMP-3`/`PACKED-DECIMAL`, `INDEX`, `POINTER`, `NATIONAL`
+  - OCCURS on elementary items **and on groups**, nested tables, and `OCCURS ... DEPENDING ON`
+  - **REDEFINES** - Shows redefined field positions/lengths AND correctly excludes redefined bytes from parent totals
+  - SYNCHRONIZED alignment on halfword/fullword/doubleword boundaries
+  - Nested groups and subgroups to any depth
+  - Definitions that wrap across multiple source lines
+
+### Byte-Size Rules
+
+| Usage | Size |
+|-------|------|
+| `DISPLAY` | one byte per character position (`S`, `V` and `P` take none) |
+| `COMP` / `COMP-4` / `BINARY` / `COMP-5` | 1-4 digits → 2 bytes, 5-9 → 4 bytes, 10-18 → 8 bytes |
+| `COMP-3` / `PACKED-DECIMAL` | `FLOOR(digits / 2) + 1` bytes |
+| `COMP-1` | 4 bytes | 
+| `COMP-2` | 8 bytes |
+| `INDEX` / `POINTER` | 4 bytes |
+| `NATIONAL` / `PIC N` | 2 bytes per character position |
 
 ## Supported File Extensions
 
@@ -98,22 +110,26 @@ A sample COBOL file is included (`sample.cbl`). To test:
 2. Hover over any variable
 3. See the offset/length information in the tooltip
 
-## Unit Tests
+## Test Suite
 
-Test individual PIC clause calculations:
 ```bash
-node test-calculations.js
+npm test
 ```
 
-Test complete COBOL structure parsing:
-```bash
-node test-structure.js
-```
+Runs the full integration plan in [test/](test/) — 595 assertions across seven suites:
 
-Test REDEFINES handling:
-```bash
-node test-redefines-validation.js
-```
+| Suite | Covers |
+|-------|--------|
+| `suite-picture.js` | Byte and digit counting for every PICTURE symbol |
+| `suite-usage.js` | `COMP`, `COMP-3`, `COMP-1`, `COMP-2`, `INDEX`, `POINTER` sizing and all spelling variants |
+| `suite-structure.js` | Nested groups; every level must produce a hover |
+| `suite-occurs.js` | Elementary, group, nested and `DEPENDING ON` tables |
+| `suite-redefines.js` | Partial redefinitions, nesting, cascading, cursor rewind |
+| `suite-multiline.js` | Statements spanning lines anchor to the name line |
+| `suite-regression.js` | The hand-verified sample files must not drift |
+
+Every expected value is written by hand from IBM Enterprise COBOL storage rules —
+never copied back out of parser output.
 
 ## Development
 

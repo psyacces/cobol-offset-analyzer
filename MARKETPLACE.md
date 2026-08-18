@@ -96,20 +96,25 @@ The setting is **saved automatically** between sessions.
 ## Supported COBOL Features
 
 ✅ **All COBOL data types:**
-- Numeric (9), Alphanumeric (X), Signed (S9)
-- Decimal (9V9), COMP (Binary), COMP-3 (Packed)
-- Numeric Edited (Z, *, $, +, -)
+- Numeric (9), Alphanumeric (X), Alphabetic (A), Signed (S9)
+- Implied decimals (9V9) and scaling positions (P)
+- COMP / COMP-4 / BINARY / COMP-5 (halfword, fullword, doubleword)
+- COMP-3 / PACKED-DECIMAL (packed decimal)
+- COMP-1 and COMP-2 (floating point), INDEX, POINTER
+- National / DBCS (PIC N, PIC G)
+- Numeric Edited — `ZZ,ZZ9.99`, `$$$,$$9.99CR`, `----9.99`, `****.**`
 
 ✅ **COBOL clauses:**
-- OCCURS (arrays/tables)
-- REDEFINES (memory reuse - correctly calculated)
-- SYNCHRONIZED (field alignment)
-- PIC clause parsing
+- OCCURS on elementary items *and* on groups, nested tables, OCCURS DEPENDING ON
+- REDEFINES (memory reuse — correctly calculated, including partial redefinitions)
+- SYNCHRONIZED (halfword / fullword / doubleword alignment)
+- Full PICTURE clause parsing
 
 ✅ **Nested structures:**
-- Group headers (01, 05, 10... levels)
+- Group headers (01, 05, 10... levels) to any depth
 - Subgroups with automatic size calculation
 - Correct byte calculations including nesting
+- Definitions wrapped across multiple source lines
 
 ## Why This Extension?
 

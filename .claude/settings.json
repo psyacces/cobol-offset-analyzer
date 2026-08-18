@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node test-redefines-validation.js)"
+      "Bash(node test-redefines-validation.js)",
+      "Bash(node test-redefines-fix.js)"
     ]
   }
 }
