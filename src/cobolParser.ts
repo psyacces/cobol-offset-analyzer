@@ -30,6 +30,7 @@ export class CobolParser {
     private red: number = 0;
     private sync: boolean = false;
     private slv: string = '00';
+    private positionBeforeRedefines: number = 1;
 
     private lposMap: Map<string, number> = new Map();
     private groupStack: GroupInfo[] = [];
@@ -44,6 +45,7 @@ export class CobolParser {
         let data = '';
         this.pos = 1;
         this.plv = '00';
+        this.positionBeforeRedefines = 1;
         this.lposMap.clear();
         this.groupStack = [];
         this.results = [];
@@ -103,6 +105,8 @@ export class CobolParser {
             this.red++;
             this.rlevArray[this.red] = lev;
             this.rposArray[this.red] = this.pos;
+            // Save position before entering REDEFINES
+            this.positionBeforeRedefines = this.pos;
             const redefinedPos = this.lposMap.get(lev);
             this.pos = (redefinedPos !== undefined) ? redefinedPos : 1;
         }
@@ -183,17 +187,24 @@ export class CobolParser {
 
             results.push(result);
 
-            // Update parent group lengths ONLY if NOT REDEFINES
-            // and if NOT inside a REDEFINES group
-            // REDEFINES occupies same memory space, doesn't add bytes
+            // Update parent group lengths and position tracking
             const isInsideRedefinesGroup = this.groupStack.some(g => g.isRedefines);
+            const isFieldRedefines = data.includes('REDEFINES');
 
-            if (!data.includes('REDEFINES') && !isInsideRedefinesGroup) {
+            if (isInsideRedefinesGroup) {
+                // Field inside REDEFINES: update only the REDEFINES group, advance position
+                if (this.groupStack.length > 0) {
+                    this.groupStack[this.groupStack.length - 1].length += len;
+                }
+                this.pos += len;
+            } else if (!isFieldRedefines) {
+                // Normal field: update all parents and advance position
                 for (let i = 0; i < this.groupStack.length; i++) {
                     this.groupStack[i].length += len;
                 }
                 this.pos += len;
             }
+            // If field itself is REDEFINES, don't update parents or position
 
             this.plv = lev;
 
@@ -223,9 +234,12 @@ export class CobolParser {
                 break;
             }
 
+            const wasRedefines = lastGroup.isRedefines || false;
+
             // Pop and create result for this group
             this.groupStack.pop();
 
+            // Create result even for REDEFINES groups (they have length from their children)
             if (lastGroup.length > 0) {
                 const result: ParsedVariable = {
                     line: lastGroup.line,
@@ -235,18 +249,23 @@ export class CobolParser {
                     length: lastGroup.length,
                     hasPic: false,
                     isOccurs: false,
-                    isRedefines: false,
+                    isRedefines: wasRedefines,
                     isSynchronized: false,
                     isComp: false,
                     isComp3: false,
                     rawLine: '',
-                    dataType: 'Group/Structure'
+                    dataType: wasRedefines ? 'Group/Structure (REDEFINES)' : 'Group/Structure'
                 };
 
                 results.push(result);
 
                 // Note: Do NOT update parent groups here!
                 // The child fields already updated parent groups when they were processed
+            }
+
+            // If this was a REDEFINES group, restore position to what it was before
+            if (wasRedefines) {
+                this.pos = this.positionBeforeRedefines;
             }
         }
     }

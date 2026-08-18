@@ -14,9 +14,10 @@ A VSCode extension that analyzes COBOL data structures and displays the offset (
   - PIC clause length calculation
   - COMP and COMP-3 numeric formats
   - OCCURS clause for arrays
-  - REDEFINES clause (correctly excludes redefined bytes)
+  - **REDEFINES clause** - Shows redefined field positions/lengths AND correctly excludes redefined bytes from parent totals
   - SYNCHRONIZED fields
   - Nested groups and subgroups
+  - Complex scenarios (cascading REDEFINES, REDEFINES with OCCURS, field-level REDEFINES)
 
 ## Supported File Extensions
 
