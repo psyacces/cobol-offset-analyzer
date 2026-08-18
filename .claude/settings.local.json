@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(node test-calculations.js)"
+      "Bash(node test-calculations.js)",
+      "Bash(node -e ' *)"
     ]
   }
 }

@@ -10,7 +10,8 @@
  *   4. OCCURS       — elementary, group, nested and DEPENDING ON tables
  *   5. REDEFINES    — partial redefinitions, nesting, cascading, cursor rewind
  *   6. Multi-line   — statements spanning lines anchor to the name line
- *   7. Regression   — the hand-verified sample files must not drift
+ *   7. Real-world   — sequence numbers, INDEXED BY, column-72 overrun, casing
+ *   8. Regression   — the hand-verified sample files must not drift
  *
  * Run with: npm test
  */
@@ -22,6 +23,7 @@ const suites = [
     require('./suite-occurs'),
     require('./suite-redefines'),
     require('./suite-multiline'),
+    require('./suite-realworld'),
     require('./suite-regression')
 ];
 

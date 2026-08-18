@@ -89,6 +89,17 @@ export class CobolParser {
                 continue;
             }
 
+            // A pending statement that never received its period — most often
+            // because the line ran past column 72 — must not swallow the entry
+            // that follows. If this line opens a new data item and the pending
+            // text is not waiting on a clause operand, close the pending one out.
+            if (buffer !== '' && CobolParser.opensDataItem(text) &&
+                !CobolParser.awaitsOperand(buffer)) {
+                this.processEntry(buffer, startLine, Math.max(startLine, lineNum - 1));
+                buffer = '';
+                startLine = -1;
+            }
+
             if (startLine < 0) startLine = lineNum;
 
             if (text.endsWith('.')) {
@@ -113,22 +124,59 @@ export class CobolParser {
 
     // ---------------------------------------------------------------- lines
 
+    /**
+     * Clauses whose operand legitimately continues onto the next line. If the
+     * pending text ends with one of these, a following line that starts with
+     * digits is that operand (`OCCURS` / `10 TIMES.`), not a new data item.
+     */
+    private static readonly OPERAND_KEYWORDS = new Set([
+        'OCCURS', 'TO', 'DEPENDING', 'ON', 'BY', 'VALUE', 'VALUES', 'PIC',
+        'PICTURE', 'IS', 'ARE', 'REDEFINES', 'TIMES', 'INDEXED', 'SIGN',
+        'USAGE', 'BLANK', 'WHEN', 'JUSTIFIED', 'JUST', 'SYNCHRONIZED', 'SYNC',
+        'LEADING', 'TRAILING', 'SEPARATE', 'CHARACTER', 'THRU', 'THROUGH',
+        'RENAMES', 'FROM', 'ASCENDING', 'DESCENDING', 'KEY'
+    ]);
+
+    /** True when the text begins a data description entry: a level and a name. */
+    private static opensDataItem(text: string): boolean {
+        return /^\d{1,2}\s+[A-Za-z][A-Za-z0-9$#@-]*/.test(text);
+    }
+
+    /** True when the pending text is still waiting for a clause operand. */
+    private static awaitsOperand(buffer: string): boolean {
+        const tokens = buffer.trim().split(/\s+/);
+        const last = tokens[tokens.length - 1];
+        return last !== undefined && CobolParser.OPERAND_KEYWORDS.has(last.toUpperCase());
+    }
+
     private cleanLine(line: string): string {
         if (!line) return '';
         if (line.substring(0, 2) === '++') return '';
         if (line.substring(2, 7) === 'DUMMY') return '';
 
-        // Fixed-format comment / continuation indicator in column 7.
-        if (line.length >= 7) {
-            const indicator = line[6];
-            if (indicator === '*' || indicator === '/') return '';
-        }
-        if (line.trimStart().startsWith('*')) return '';
+        const firstNonSpace = line.search(/\S/);
+        if (firstNonSpace < 0) return '';
 
-        // Columns 8-72 hold the code area in fixed format; fall back to the whole
-        // line for free-format sources that start in column 1.
-        let body = line.length >= 8 ? line.substring(7, 72) : line;
-        if (body.trim() === '' && line.trim() !== '') body = line;
+        // Fixed format when a 6-digit sequence number leads the line, or when the
+        // text starts at or beyond column 7 (Area A). Anything else is free
+        // format. Deciding this per line matters: a line holding nothing but a
+        // sequence number is blank, and must never be mistaken for code —
+        // otherwise it is buffered and swallows the statement that follows it.
+        const hasSequenceNumber = /^\d{6}/.test(line);
+        const fixedFormat = hasSequenceNumber || firstNonSpace >= 6;
+
+        let body: string;
+        if (fixedFormat) {
+            if (line.length >= 7) {
+                const indicator = line[6];
+                if (indicator === '*' || indicator === '/') return '';
+            }
+            // Columns 8-72 are the code area; 73-80 are the identification area.
+            body = line.length >= 8 ? line.substring(7, 72) : '';
+        } else {
+            if (line.trimStart().startsWith('*')) return '';
+            body = line;
+        }
 
         let text = body.trim();
         const inlineComment = text.indexOf('*>');
@@ -189,6 +237,13 @@ export class CobolParser {
         if (hasPic || this.isElementaryWithoutPic(usage)) {
             const pic = this.parsePicture(picture);
             let len = this.elementarySize(pic, usage);
+
+            // SIGN IS LEADING/TRAILING SEPARATE gives the sign a byte of its own
+            // instead of overpunching it onto a digit.
+            if (usage === 'DISPLAY' && pic.signed &&
+                clauses.split(/[\s,;()]+/).includes('SEPARATE')) {
+                len += 1;
+            }
 
             if (isSynchronized) this.pos = this.alignFor(this.pos, len, usage);
             // Position may have moved for alignment — re-record it.
@@ -306,16 +361,24 @@ export class CobolParser {
 
     // -------------------------------------------------------------- usage
 
+    /**
+     * A usage keyword only counts as a whole token. Clauses such as
+     * `OCCURS 10 TIMES INDEXED BY WS-INDEX` carry user-defined names, and a
+     * substring match would read INDEX out of WS-INDEX and turn the group into a
+     * four-byte elementary item.
+     */
     private detectUsage(clauses: string): Usage {
-        if (/\b(COMP-3|COMPUTATIONAL-3|PACKED-DECIMAL)\b/.test(clauses)) return 'PACKED';
-        if (/\b(COMP-1|COMPUTATIONAL-1)\b/.test(clauses)) return 'COMP-1';
-        if (/\b(COMP-2|COMPUTATIONAL-2)\b/.test(clauses)) return 'COMP-2';
-        if (/\b(COMP-5|COMPUTATIONAL-5|COMP-4|COMPUTATIONAL-4|BINARY|COMP|COMPUTATIONAL)\b/.test(clauses)) {
-            return 'BINARY';
-        }
-        if (/\bINDEX\b/.test(clauses)) return 'INDEX';
-        if (/\b(POINTER|PROCEDURE-POINTER|FUNCTION-POINTER)\b/.test(clauses)) return 'POINTER';
-        if (/\bNATIONAL\b/.test(clauses)) return 'NATIONAL';
+        const tokens = clauses.split(/[\s,;()]+/);
+        const has = (...keywords: string[]) => keywords.some(k => tokens.includes(k));
+
+        if (has('COMP-3', 'COMPUTATIONAL-3', 'PACKED-DECIMAL')) return 'PACKED';
+        if (has('COMP-1', 'COMPUTATIONAL-1')) return 'COMP-1';
+        if (has('COMP-2', 'COMPUTATIONAL-2')) return 'COMP-2';
+        if (has('COMP', 'COMPUTATIONAL', 'COMP-4', 'COMPUTATIONAL-4',
+                'COMP-5', 'COMPUTATIONAL-5', 'BINARY')) return 'BINARY';
+        if (has('INDEX')) return 'INDEX';
+        if (has('POINTER', 'PROCEDURE-POINTER', 'FUNCTION-POINTER')) return 'POINTER';
+        if (has('NATIONAL')) return 'NATIONAL';
         return 'DISPLAY';
     }
 

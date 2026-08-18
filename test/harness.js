@@ -25,6 +25,11 @@ function parse(source) {
     return new CobolParser().parse(fixed(source));
 }
 
+/** Parses lines exactly as written — for sequence numbers and column tests. */
+function parseRaw(source) {
+    return new CobolParser().parse(source.split('\n'));
+}
+
 class Results {
     constructor(name) {
         this.name = name;
@@ -101,4 +106,4 @@ function dump(vars) {
     }
 }
 
-module.exports = { CobolParser, parse, fixed, Results, dump };
+module.exports = { CobolParser, parse, parseRaw, fixed, Results, dump };
