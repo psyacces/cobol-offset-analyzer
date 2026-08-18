@@ -134,11 +134,8 @@ npm run watch
 
 1. Press `F5` to start debugging
 2. A new VSCode window opens with your extension loaded
-3. Open a COBOL file and test the hover functionality
+3. Open a COBOL file and test the hover functionality on each variable
 
-## Original Algorithm
-
-This extension implements the same offset-calculation algorithm that has been running successfully on IBM Mainframe z/OS (REXX) for 20+ years. The logic is based on the proven REXX implementation and has been adapted for VSCode.
 
 ## License
 
