@@ -3,7 +3,13 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(node test-calculations.js)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(git revert *)",
+      "Bash(echo \"--- exit: $? ---\")",
+      "Bash(git stash *)",
+      "Bash(echo \"--- rc=$? ---\")",
+      "Bash(sed -i '' 's/\"version\": \"0.0.7\"/\"version\": \"0.0.10\"/' package.json)",
+      "Bash(rm -rf out)"
     ]
   }
 }

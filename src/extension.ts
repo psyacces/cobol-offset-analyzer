@@ -59,15 +59,9 @@ export function activate(context: vscode.ExtensionContext) {
 			const variables = parser.parse(lines);
 
 			const hoveredLine = position.line;
-			// A definition can span several lines (e.g. a REDEFINES clause wrapped
-			// onto the next line). Match anywhere in the statement, preferring the
-			// narrowest match so nested entries never shadow each other.
-			const candidates = variables.filter(v => hoveredLine >= v.line && hoveredLine <= v.endLine);
-			const variable = candidates.length === 0 ? undefined : candidates.reduce((best, v) =>
-				(v.endLine - v.line) < (best.endLine - best.line) ? v : best
-			);
+			const variable = variables.find(v => v.line === hoveredLine);
 
-			if (variable) {
+			if (variable && variable.length > 0) {
 				const posStr = String(variable.position).padStart(6, '0');
 				const lenStr = String(variable.length).padStart(6, '0');
 
@@ -78,10 +72,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 				const attributes: string[] = [];
 				if (variable.isOccurs) {
-					attributes.push(`OCCURS ${variable.occursCount}`);
+					attributes.push(`OCCURS`);
 				}
 				if (variable.isRedefines) {
-					attributes.push(`REDEFINES ${variable.redefinesTarget}`.trim());
+					attributes.push(`REDEFINES`);
 				}
 				if (variable.isSynchronized) {
 					attributes.push(`SYNCHRONIZED`);
