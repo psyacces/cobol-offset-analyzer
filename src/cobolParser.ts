@@ -43,6 +43,7 @@ export class CobolParser {
     public parse(cobolLines: string[]): ParsedVariable[] {
         const results: ParsedVariable[] = [];
         let data = '';
+        let dataStartLine = -1;
         this.pos = 1;
         this.plv = '00';
         this.positionBeforeRedefines = 1;
@@ -61,11 +62,19 @@ export class CobolParser {
                 continue;
             }
 
+            // Remember where the declaration started, so multi-line definitions
+            // are anchored to the line holding the variable name, not to the
+            // continuation line that carries the closing period.
+            if (dataStartLine === -1) {
+                dataStartLine = lineNum;
+            }
+
             // Handle line continuation
             if (datl.endsWith('.')) {
                 data += datl.substring(0, datl.length - 1);
-                this.processLine(data, lineNum, results);
+                this.processLine(data, dataStartLine, results);
                 data = '';
+                dataStartLine = -1;
             } else {
                 data += datl + ' ';
                 continue;
@@ -300,10 +309,12 @@ export class CobolParser {
 
         let length = 0;
 
-        // Handle V for decimal point
+        // Handle V for decimal point. V is an implied decimal point: it takes no
+        // storage, so it must be stripped even when it is the first character
+        // (e.g. SV9(3), which is 3 digits, not 4).
         const vIndex = pic.indexOf('V');
-        let intPart = vIndex > 0 ? pic.substring(0, vIndex) : pic;
-        let decPart = vIndex > 0 ? pic.substring(vIndex + 1) : '';
+        let intPart = vIndex >= 0 ? pic.substring(0, vIndex) : pic;
+        let decPart = vIndex >= 0 ? pic.substring(vIndex + 1) : '';
 
         // Calculate integer part
         length += this.calculateSinglePicPart(intPart);
@@ -331,6 +342,9 @@ export class CobolParser {
                 i++;
             } else if (char === '.' || char === ' ') {
                 // Skip period and spaces
+                i++;
+            } else if (char === 'V' || char === 'S') {
+                // Implied decimal point and sign take no storage
                 i++;
             } else {
                 // This is a picture character (9, X, A, Z, etc)
